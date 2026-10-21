@@ -93,6 +93,17 @@
     .stats strong { display: block; font-size: 20px; }
     .stats small { color: var(--muted); font-size: 11px; }
     .results .primary { width: 100%; padding: 13px; }
+    .review-toggle { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 650; }
+    .review-toggle:hover { border-color: var(--accent); background: var(--soft); }
+    .review-panel { margin: 0 0 20px; text-align: left; }
+    .review-panel h3 { margin: 0 0 12px; font-size: 16px; }
+    .review-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+    .review-item { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--surface); overflow-wrap: anywhere; }
+    .review-item h4 { margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
+    .review-item p { margin: 5px 0 0; max-width: none; font-size: 12px; }
+    .review-item strong { color: var(--text); }
+    .review-empty { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .review-empty p { color: var(--text); }
     .results.celebrating { background: radial-gradient(ellipse at 50% 12%, var(--soft), transparent 65%); }
     .celebrating .reaction {
       position: relative; display: grid; place-items: center; width: 126px; height: 126px;
@@ -205,6 +216,11 @@
             <div><strong id="accuracy"></strong><small>Accuracy</small></div>
             <div><strong id="rank"></strong><small>Explorer rank</small></div>
           </div>
+          <button class="review-toggle" id="review-toggle" type="button" aria-expanded="false" aria-controls="review-panel">Review missed questions</button>
+          <section class="review-panel" id="review-panel" aria-labelledby="review-title" aria-live="polite" hidden>
+            <h3 id="review-title" tabindex="-1">Questions to revisit</h3>
+            <ol class="review-list" id="review-list"></ol>
+          </section>
           <button class="primary" id="restart">Explore again <span class="arrow" aria-hidden="true">&#8635;</span></button>
         </div>
       </section>
@@ -228,6 +244,7 @@
     let current = 0;
     let score = 0;
     let answered = false;
+    let attemptAnswers = [];
 
     function renderQuestion(focus = false) {
       answered = false;
@@ -260,6 +277,7 @@
       if (answered) return;
       answered = true;
       const q = questions[current];
+      attemptAnswers[current] = selected;
       const correct = selected === q.correct;
       if (correct) score++;
       $("score").textContent = score;
@@ -293,6 +311,42 @@
     function showResults() {
       $("quiz").hidden = true;
       $("results").hidden = false;
+      const missed = questions
+        .map((question, index) => ({ question, selected: attemptAnswers[index] }))
+        .filter(entry => entry.selected !== entry.question.correct);
+      $("review-toggle").textContent = score === questions.length ? "Review your answers" : "Review missed questions";
+      $("review-toggle").setAttribute("aria-expanded", "false");
+      $("review-panel").hidden = true;
+      $("review-list").replaceChildren();
+      if (missed.length === 0) {
+        const message = document.createElement("li");
+        message.className = "review-empty";
+        const text = document.createElement("p");
+        text.textContent = "You got every question right. Nothing missed—wonderfully done, explorer!";
+        message.append(text);
+        $("review-list").append(message);
+      } else {
+        missed.forEach(({ question, selected }) => {
+          const item = document.createElement("li");
+          item.className = "review-item";
+          const heading = document.createElement("h4");
+          heading.textContent = question.question;
+          const playerAnswer = document.createElement("p");
+          const playerLabel = document.createElement("strong");
+          playerLabel.textContent = "Your answer: ";
+          playerAnswer.append(playerLabel, document.createTextNode(question.answers[selected]));
+          const correctAnswer = document.createElement("p");
+          const correctLabel = document.createElement("strong");
+          correctLabel.textContent = "Correct answer: ";
+          correctAnswer.append(correctLabel, document.createTextNode(question.answers[question.correct]));
+          const fact = document.createElement("p");
+          const factLabel = document.createElement("strong");
+          factLabel.textContent = "Did you know? ";
+          fact.append(factLabel, document.createTextNode(question.fact));
+          item.append(heading, playerAnswer, correctAnswer, fact);
+          $("review-list").append(item);
+        });
+      }
       const celebrating = score >= 8;
       $("results").classList.toggle("celebrating", celebrating);
       $("achievement").hidden = !celebrating;
@@ -324,15 +378,30 @@
       if (current === questions.length - 1) showResults();
       else { current++; renderQuestion(true); }
     });
+    $("review-toggle").addEventListener("click", () => {
+      const expanded = $("review-toggle").getAttribute("aria-expanded") === "true";
+      $("review-toggle").setAttribute("aria-expanded", String(!expanded));
+      $("review-panel").hidden = expanded;
+      $("review-toggle").textContent = expanded
+        ? (score === questions.length ? "Review your answers" : "Review missed questions")
+        : "Close review";
+      if (expanded) $("review-toggle").focus({ preventScroll: true });
+      else $("review-title").focus({ preventScroll: true });
+    });
     $("restart").addEventListener("click", () => {
       current = 0;
       score = 0;
+      attemptAnswers = [];
       $("score").textContent = "0";
       $("progress").style.width = "0%";
       document.querySelector('[role="progressbar"]').setAttribute("aria-valuenow", "0");
       $("results").hidden = true;
       $("results").classList.remove("celebrating");
       $("achievement").hidden = true;
+      $("review-panel").hidden = true;
+      $("review-toggle").setAttribute("aria-expanded", "false");
+      $("review-toggle").textContent = "Review missed questions";
+      $("review-list").replaceChildren();
       $("results").querySelectorAll(".confetti").forEach(piece => piece.remove());
       $("quiz").hidden = false;
       renderQuestion(true);
